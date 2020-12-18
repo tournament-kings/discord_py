@@ -256,7 +256,44 @@ class Client:
             VoiceClient.warn_nacl = False
             log.warning("PyNaCl is not installed, voice will NOT be supported")
 
+        self.redis = options.get('redis')
+        self._overwrite()
+
     # internals
+
+    def _overwrite(self):
+        client = self
+
+        def get_member(self: discord.Guild, user_id):
+            return discord.Member(
+                data=json.loads(client.redis.get(f"{user_id}-{self.id}")),
+                guild=self,
+                state=client._connection
+            )
+
+        def _add_member(self: discord.Guild, member: discord.Member):
+            dump_member = {
+                'user': {
+                    'id': str(member.id),
+                    'username': str(member._user.name),
+                    'name': str(member.name),
+                    'discriminator': str(member.discriminator),
+                    'avatar': str(member.avatar),
+                    '_public_flags': member._user._public_flags,
+                    'bot': member.bot,
+                    'system': member._user.system
+                },
+                'joined_at': str(member.joined_at.isoformat()),
+                'premium_since': str(member.premium_since.isoformat()) if member.premium_since else None,
+                'guild_id': str(member.id),
+                'status': str(member.status),
+                'roles': [str(i) for i in member._roles]
+            }
+
+            client.redis.set(f"{member.id}-{self.id}", json.dumps(dump_member))
+
+        discord.Guild._add_member = _add_member
+        discord.Guild.get_member = get_member
 
     def _get_websocket(self, guild_id=None, *, shard_id=None):
         return self.ws
