@@ -33,6 +33,7 @@ import traceback
 import aiohttp
 
 from .user import User, Profile
+from .member import Member
 from .invite import Invite
 from .template import Template
 from .widget import Widget
@@ -264,14 +265,14 @@ class Client:
     def _overwrite(self):
         client = self
 
-        def get_member(self: discord.Guild, user_id):
-            return discord.Member(
+        def get_member(self: Guild, user_id):
+            return Member(
                 data=json.loads(client.redis.get(f"{user_id}-{self.id}")),
                 guild=self,
                 state=client._connection
             )
 
-        def _add_member(self: discord.Guild, member: discord.Member):
+        def _add_member(self: Guild, member: Member):
             dump_member = {
                 'user': {
                     'id': str(member.id),
