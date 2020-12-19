@@ -29,6 +29,7 @@ import logging
 import signal
 import sys
 import traceback
+import json
 
 import aiohttp
 
@@ -257,7 +258,7 @@ class Client:
             VoiceClient.warn_nacl = False
             log.warning("PyNaCl is not installed, voice will NOT be supported")
 
-        self.redis = options.get('redis')
+        self._redis = options.get('redis')
         self._overwrite()
 
     # internals
@@ -267,7 +268,7 @@ class Client:
 
         def get_member(self: Guild, user_id):
             return Member(
-                data=json.loads(client.redis.get(f"{user_id}-{self.id}")),
+                data=json.loads(client._redis.get(f"{user_id}-{self.id}")),
                 guild=self,
                 state=client._connection
             )
@@ -291,7 +292,7 @@ class Client:
                 'roles': [str(i) for i in member._roles]
             }
 
-            client.redis.set(f"{member.id}-{self.id}", json.dumps(dump_member))
+            client._redis.set(f"{member.id}-{self.id}", json.dumps(dump_member))
 
         Guild._add_member = _add_member
         Guild.get_member = get_member
