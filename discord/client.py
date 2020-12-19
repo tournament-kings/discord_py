@@ -293,8 +293,8 @@ class Client:
 
             client.redis.set(f"{member.id}-{self.id}", json.dumps(dump_member))
 
-        discord.Guild._add_member = _add_member
-        discord.Guild.get_member = get_member
+        Guild._add_member = _add_member
+        Guild.get_member = get_member
 
     def _get_websocket(self, guild_id=None, *, shard_id=None):
         return self.ws
