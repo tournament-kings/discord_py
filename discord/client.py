@@ -294,8 +294,12 @@ class Client:
 
             client._redis.set(f"{member.id}-{self.id}", json.dumps(dump_member))
 
+        def _remove_member(self: Guild, member: Member):
+            client._redis.delete(f"{member.id}-{self.id}")
+
         Guild._add_member = _add_member
         Guild.get_member = get_member
+        Guild._remove_member = _remove_member
 
     def _get_websocket(self, guild_id=None, *, shard_id=None):
         return self.ws
