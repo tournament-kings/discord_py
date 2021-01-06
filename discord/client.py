@@ -269,8 +269,11 @@ class Client:
         client = self
 
         def get_member(self: Guild, user_id):
+            data = client._redis.get(f"{self.id}:{user_id}")
+            if not data:
+                return
             return Member(
-                data=json.loads(client._redis.get(f"{self.id}:{user_id}")),
+                data=json.loads(data),
                 guild=self,
                 state=client._connection
             )
