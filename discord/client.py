@@ -29,10 +29,12 @@ import logging
 import signal
 import sys
 import traceback
+import json
 
 import aiohttp
 
 from .user import User, Profile
+from .member import Member
 from .invite import Invite
 from .template import Template
 from .widget import Widget
@@ -256,7 +258,50 @@ class Client:
             VoiceClient.warn_nacl = False
             log.warning("PyNaCl is not installed, voice will NOT be supported")
 
+        self._redis = options.get('redis')
+        self._overwrite()
+
     # internals
+
+    def _overwrite(self):
+        # TODO: Set the keys to expire after 1 day
+
+        client = self
+
+        def get_member(self: Guild, user_id):
+            return Member(
+                data=json.loads(client._redis.get(f"{self.id};{user_id}")),
+                guild=self,
+                state=client._connection
+            )
+
+        def _add_member(self: Guild, member: Member):
+            dump_member = {
+                'user': {
+                    'id': str(member.id),
+                    'username': str(member._user.name),
+                    'name': str(member.name),
+                    'discriminator': str(member.discriminator),
+                    'avatar': str(member.avatar),
+                    '_public_flags': member._user._public_flags,
+                    'bot': member.bot,
+                    'system': member._user.system
+                },
+                'joined_at': str(member.joined_at.isoformat()),
+                'premium_since': str(member.premium_since.isoformat()) if member.premium_since else None,
+                'guild_id': str(member.id),
+                'status': str(member.status),
+                'roles': [str(i) for i in member._roles]
+            }
+
+            client._redis.set(f"{self.id};{member.id}", json.dumps(dump_member))
+
+        def _remove_member(self: Guild, member: Member):
+            client._redis.delete(f"{self.id};{member.id}")
+
+        Guild._add_member = _add_member
+        Guild.get_member = get_member
+        Guild._remove_member = _remove_member
 
     def _get_websocket(self, guild_id=None, *, shard_id=None):
         return self.ws
