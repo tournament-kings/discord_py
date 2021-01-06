@@ -292,7 +292,7 @@ class Client:
                 },
                 'joined_at': str(member.joined_at.isoformat()),
                 'premium_since': str(member.premium_since.isoformat()) if member.premium_since else None,
-                'guild_id': str(member.id),
+                'guild_id': str(member.guild.id),
                 'status': str(member.status),
                 'roles': [str(i) for i in member._roles]
             }
