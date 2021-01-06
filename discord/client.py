@@ -302,8 +302,10 @@ class Client:
         def _remove_member(self: Guild, member: Member):
             client._redis.delete(f"{self.id}:{member.id}")
 
+        old_update = Member._update
+
         def _update(self: Member, data):
-            Member._update(self, data)
+            old_update(self, data)
             _add_member(self.guild, self)
 
         Guild._add_member = _add_member
