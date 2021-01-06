@@ -270,7 +270,7 @@ class Client:
 
         def get_member(self: Guild, user_id):
             return Member(
-                data=json.loads(client._redis.get(f"{self.id};{user_id}")),
+                data=json.loads(client._redis.get(f"{self.id}:{user_id}")),
                 guild=self,
                 state=client._connection
             )
@@ -294,10 +294,10 @@ class Client:
                 'roles': [str(i) for i in member._roles]
             }
 
-            client._redis.set(f"{self.id};{member.id}", json.dumps(dump_member))
+            client._redis.set(f"{self.id}:{member.id}", json.dumps(dump_member))
 
         def _remove_member(self: Guild, member: Member):
-            client._redis.delete(f"{self.id};{member.id}")
+            client._redis.delete(f"{self.id}:{member.id}")
 
         Guild._add_member = _add_member
         Guild.get_member = get_member
