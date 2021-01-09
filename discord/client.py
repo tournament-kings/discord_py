@@ -290,7 +290,7 @@ class Client:
                     'bot': member.bot,
                     'system': member._user.system
                 },
-                'joined_at': str(member.joined_at.isoformat()) if member.premium_since else None,
+                'joined_at': str(member.joined_at.isoformat()) if member.joined_at else None,
                 'premium_since': str(member.premium_since.isoformat()) if member.premium_since else None,
                 'guild_id': str(member.guild.id),
                 'status': str(member.status) if member.status else None,
