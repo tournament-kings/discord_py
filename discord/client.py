@@ -860,6 +860,7 @@ class Client:
         """
         return self._connection._get_guild(id)
 
+    @utils.deprecated("'Member' objects")
     def get_user(self, id):
         """Returns a user with the given ID.
 
@@ -1409,6 +1410,7 @@ class Client:
             data['rpc_origins'] = None
         return AppInfo(self._connection, data)
 
+    @utils.deprecated("'Member' objects")
     async def fetch_user(self, user_id):
         """|coro|
 
