@@ -264,6 +264,7 @@ class Client:
     # internals
 
     def _overwrite(self):
+        import time
         # TODO: Set the keys to expire after 1 day
 
         client = self
@@ -296,7 +297,7 @@ class Client:
                 'status': str(member.status) if member.status else None,
                 'roles': [str(i) for i in member._roles]
             }
-            logging.info(f"Adding member {dump_member['user']['id']}")
+            logging.info(f"Adding member {dump_member['user']['id']}, {time.time.ns_now()}")
 
             client._redis.set(f"{self.id}:{member.id}", json.dumps(dump_member))
 
