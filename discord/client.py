@@ -296,6 +296,7 @@ class Client:
                 'status': str(member.status) if member.status else None,
                 'roles': [str(i) for i in member._roles]
             }
+            logging.info(f"Adding member {dump_member['user']['id']}")
 
             client._redis.set(f"{self.id}:{member.id}", json.dumps(dump_member))
 
