@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2020 Rapptz
+Copyright (c) 2015-present Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -70,7 +70,7 @@ class VoiceProtocol:
 
     These classes are passed to :meth:`abc.Connectable.connect`.
 
-    .. _Lavalink: https://github.com/Frederikam/Lavalink
+    .. _Lavalink: https://github.com/freyacodes/Lavalink
 
     Parameters
     ------------
@@ -220,6 +220,7 @@ class VoiceClient(VoiceProtocol):
         self._player = None
         self.encoder = None
         self._lite_nonce = 0
+        self.ws = None
 
     warn_nacl = not has_nacl
     supported_modes = (
@@ -364,6 +365,8 @@ class VoiceClient(VoiceProtocol):
             self._runner = self.loop.create_task(self.poll_voice_ws(reconnect))
 
     async def potential_reconnect(self):
+        # Attempt to stop the player thread from playing early
+        self._connected.clear()
         self.prepare_handshake()
         self._potentially_reconnecting = True
         try:

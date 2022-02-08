@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2020 Rapptz
+Copyright (c) 2015-present Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -30,7 +30,6 @@ import copy
 import datetime
 import itertools
 import logging
-import math
 import weakref
 import warnings
 import inspect
@@ -53,7 +52,6 @@ from .role import Role
 from .enums import ChannelType, try_enum, Status
 from . import utils
 from .flags import Intents, MemberCacheFlags
-from .embeds import Embed
 from .object import Object
 from .invite import Invite
 
@@ -181,10 +179,13 @@ class ConnectionState:
 
             cache_flags._verify_intents(intents)
 
-        self._member_cache_flags = cache_flags
+        self.member_cache_flags = cache_flags
         self._activity = activity
         self._status = status
         self._intents = intents
+
+        if not intents.members or cache_flags._empty:
+            self.store_user = self.store_user_no_intents
 
         self.parsers = parsers = {}
         for attr, func in inspect.getmembers(self):
@@ -278,6 +279,9 @@ class ConnectionState:
             if user.discriminator != '0000':
                 self._users[user_id] = user
             return user
+
+    def store_user_no_intents(self, data):
+        return User(state=self, data=data)
 
     def get_user(self, id):
         return self._users.get(id)
@@ -378,11 +382,11 @@ class ConnectionState:
 
         return channel or Object(id=channel_id), guild
 
-    async def chunker(self, guild_id, query='', limit=0, *, nonce=None):
+    async def chunker(self, guild_id, query='', limit=0, presences=False, *, nonce=None):
         ws = self._get_websocket(guild_id) # This is ignored upstream
-        await ws.request_chunks(guild_id, query=query, limit=limit, nonce=nonce)
+        await ws.request_chunks(guild_id, query=query, limit=limit, presences=presences, nonce=nonce)
 
-    async def query_members(self, guild, query, limit, user_ids, cache):
+    async def query_members(self, guild, query, limit, user_ids, cache, presences):
         guild_id = guild.id
         ws = self._get_websocket(guild_id)
         if ws is None:
@@ -393,7 +397,7 @@ class ConnectionState:
 
         try:
             # start the query operation
-            await ws.request_chunks(guild_id, query=query, limit=limit, user_ids=user_ids, nonce=request.nonce)
+            await ws.request_chunks(guild_id, query=query, limit=limit, user_ids=user_ids, presences=presences, nonce=request.nonce)
             return await asyncio.wait_for(request.wait(), timeout=30.0)
         except asyncio.TimeoutError:
             log.warning('Timed out waiting for chunks with query %r and limit %d for guild_id %d', query, limit, guild_id)
@@ -520,6 +524,9 @@ class ConnectionState:
             raw.cached_message = older_message
             self.dispatch('raw_message_edit', raw)
             message._update(data)
+            # Coerce the `after` parameter to take the new updated Member
+            # ref: #5999
+            older_message.author = message.author
             self.dispatch('message_edit', older_message, message)
         else:
             self.dispatch('raw_message_edit', raw)
@@ -604,7 +611,7 @@ class ConnectionState:
         user = data['user']
         member_id = int(user['id'])
         member = guild.get_member(member_id)
-        flags = self._member_cache_flags
+        flags = self.member_cache_flags
         if member is None:
             if 'username' not in user:
                 # sometimes we receive 'incomplete' member data post-removal.
@@ -681,8 +688,6 @@ class ConnectionState:
             log.debug('CHANNEL_CREATE referencing an unknown channel type %s. Discarding.', data['type'])
             return
 
-        channel = None
-
         if ch_type in (ChannelType.group, ChannelType.private):
             channel_id = int(data['id'])
             if self._get_private_channel(channel_id) is None:
@@ -742,7 +747,7 @@ class ConnectionState:
             return
 
         member = Member(guild=guild, data=data, state=self)
-        if self._member_cache_flags.joined:
+        if self.member_cache_flags.joined:
             guild._add_member(member)
 
         try:
@@ -786,8 +791,14 @@ class ConnectionState:
 
             self.dispatch('member_update', old_member, member)
         else:
-            if self._member_cache_flags.joined:
+            if self.member_cache_flags.joined:
                 member = Member(data=data, guild=guild, state=self)
+
+                # Force an update on the inner user if necessary
+                user_update = member._update_inner_user(user)
+                if user_update:
+                    self.dispatch('user_update', user_update[0], user_update[1])
+
                 guild._add_member(member)
             log.debug('GUILD_MEMBER_UPDATE referencing an unknown member ID: %s. Discarding.', user_id)
 
@@ -816,8 +827,11 @@ class ConnectionState:
 
         return self._add_guild_from_data(data)
 
+    def is_guild_evicted(self, guild) -> bool:
+        return guild.id not in self._guilds
+
     async def chunk_guild(self, guild, *, wait=True, cache=None):
-        cache = cache or self._member_cache_flags.joined
+        cache = cache or self.member_cache_flags.joined
         request = self._chunk_requests.get(guild.id)
         if request is None:
             self._chunk_requests[guild.id] = request = ChunkRequest(guild.id, self.loop, self._get_guild, cache=cache)
@@ -885,7 +899,7 @@ class ConnectionState:
             log.debug('GUILD_DELETE referencing an unknown guild ID: %s. Discarding.', data['id'])
             return
 
-        if data.get('unavailable', False) and guild is not None:
+        if data.get('unavailable', False):
             # GUILD_DELETE with unavailable being True means that the
             # guild that was available is now currently unavailable
             guild.unavailable = True
@@ -917,10 +931,9 @@ class ConnectionState:
 
     def parse_guild_ban_remove(self, data):
         guild = self._get_guild(int(data['guild_id']))
-        if guild is not None:
-            if 'user' in data:
-                user = self.store_user(data['user'])
-                self.dispatch('member_unban', guild, user)
+        if guild is not None and 'user' in data:
+            user = self.store_user(data['user'])
+            self.dispatch('member_unban', guild, user)
 
     def parse_guild_role_create(self, data):
         guild = self._get_guild(int(data['guild_id']))
@@ -962,8 +975,19 @@ class ConnectionState:
     def parse_guild_members_chunk(self, data):
         guild_id = int(data['guild_id'])
         guild = self._get_guild(guild_id)
+        presences = data.get('presences', [])
+
         members = [Member(guild=guild, data=member, state=self) for member in data.get('members', [])]
         log.debug('Processed a chunk for %s members in guild ID %s.', len(members), guild_id)
+
+        if presences:
+            member_dict = {str(member.id): member for member in members}
+            for presence in presences:
+                user = presence['user']
+                member_id = user['id']
+                member = member_dict.get(member_id)
+                member._presence_update(presence, user)
+
         complete = data.get('chunk_index', 0) + 1 == data.get('chunk_count')
         self.process_chunk_requests(guild_id, data.get('nonce'), members, complete)
 
@@ -984,7 +1008,7 @@ class ConnectionState:
     def parse_voice_state_update(self, data):
         guild = self._get_guild(utils._get_as_snowflake(data, 'guild_id'))
         channel_id = utils._get_as_snowflake(data, 'channel_id')
-        flags = self._member_cache_flags
+        flags = self.member_cache_flags
         self_id = self.user.id
         if guild is not None:
             if int(data['user_id']) == self_id:
@@ -1031,6 +1055,11 @@ class ConnectionState:
                 member = channel.recipient
             elif isinstance(channel, TextChannel) and guild is not None:
                 member = guild.get_member(user_id)
+                if member is None:
+                    member_data = data.get('member')
+                    if member_data:
+                        member = Member(data=member_data, state=self, guild=guild)
+
             elif isinstance(channel, GroupChannel):
                 member = utils.find(lambda x: x.id == user_id, channel.recipients)
 
@@ -1116,9 +1145,9 @@ class AutoShardedConnectionState(ConnectionState):
                 channel = new_guild.get_channel(channel_id) or Object(id=channel_id)
                 msg._rebind_channel_reference(channel)
 
-    async def chunker(self, guild_id, query='', limit=0, *, shard_id=None, nonce=None):
+    async def chunker(self, guild_id, query='', limit=0, presences=False, *, shard_id=None, nonce=None):
         ws = self._get_websocket(guild_id, shard_id=shard_id)
-        await ws.request_chunks(guild_id, query=query, limit=limit, nonce=nonce)
+        await ws.request_chunks(guild_id, query=query, limit=limit, presences=presences, nonce=nonce)
 
     async def _delay_ready(self):
         await self.shards_launched.wait()
